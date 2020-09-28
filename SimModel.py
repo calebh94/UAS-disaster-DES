@@ -1,47 +1,56 @@
 # Location of all Entities and the states
 import numpy.random as random
 
-# from EventHandlers import Event, FEL
-
-
-class Event:
-    def __init__(self, id, type, time):
-        self.id = id
-        self.type = type
-        self.time = time
-        # self.end = end
-
 
 class SimDES:
-    ### CORE ###
     def __init__(self, num_uas, num_buildings, level, maxtime):
-
+        self.num_uas = num_uas
+        self.num_buildings = num_buildings
         # init variables
         self.clock = 0.0
         self.uas_arr = []
         self.building_arr = []
         self.maxtime = maxtime
-        # need to initialize arrays of entities
-        for i in range(1, num_uas):
+        self.jobs_arr = []
+        for i in range(0, num_uas):
             name = "uas_{}".format(i)
             uas = self.UAS(name, 'rescue', level)
             self.uas_arr.append(uas)
-        for j in range(1,num_buildings):
+
+        for j in range(0,num_buildings):
             size = 100 # change to distirbution from data
-            loc = random.uniform(1000, 25000)
+            loc = random.uniform(200, 300)
             bld = self.Structure(size, loc)
             self.building_arr.append(bld)
-            #   need to organize buildign array into  a Priority Queue to go to closest first
 
         self.fel = self.FEL()
 
-        test_event = Event("test_event", 0, 27)
-        self.fel.insert(test_event)
+        # Objective variables
+        self.successes = 0
+        self.searches = 0
+
 
     def run(self):
+        #TODO: init task
+        #TODO: sort building queue
         while (self.clock <= self.maxtime):
             print("Simulation time: {} min".format(self.clock))
+            events = []
+            # Managing events from entity queues:
+            for struct in self.building_arr:
+                for uas in self.uas_arr:
+                    newevent = self.schedule_search(self.clock, struct.distance, uas)
+                    self.building_arr.remove(struct)
+                    self.uas_arr.remove(uas)
+                    self.jobs_arr.append([uas, struct])
+                    events.append(newevent)
+
+            self.schedule_event(events)
             self.advance_time()
+
+        print("Successful Rescues: {}".format(self.successes))
+        print("Required search jobs {}".format(self.searches))
+        print("Total structures for mission {}".format(self.num_buildings))
 
     def advance_time(self):
         # check FEL for next event (if more than 15 min then jump 15 and check conditions)
@@ -58,7 +67,7 @@ class SimDES:
         else:
             for event in events:
                 self.fel.insert(event)
-                print("added event %s to future event list".format(event.id))
+                print("added event {} to future event list".format(event.id))
         pass
 
     def update_entities(self):
@@ -67,18 +76,32 @@ class SimDES:
 
     ### DES STRUCTURES ###
 
-    # class Event:
-    #     def __init__(self, id, type, time):
-    #         self.id = id
-    #         self.type = type
-    #         self.time = time
-    #         # self.end = end
+    class Event:
+        def __init__(self, id, type, time):
+            self.id = id
+            self.type = type
+            self.time = time
 
     def eventHandler(self, event):
         if event.type == 0:  # default example event
             print("This is a test event!")
             self.clock = event.time
-
+        elif event.type == "search":
+            print("processing search event {}".format(event.id))
+            # doing process
+            self.clock = event.time
+            newevent = self.schedule_rescue(self.clock, self.jobs_arr[0][1].distance, self.jobs_arr[0][0])
+            self.schedule_event([newevent])
+            self.searches = self.searches + 1
+        elif event.type == "rescued":
+            print("processing rescued event {}".format(event.id))
+            self.clock = event.time
+            #TODO: determine actual biulding rescued
+            uas, struct = self.jobs_arr.pop(0)
+            self.uas_arr.append(uas)
+            self.successes = self.successes + 1
+            # newevent = self.schedule_complete(self.clock, self.jobs_arr[0][0])
+            # self.schedule_event([newevent])
         else:
             print("No event of this type exists...skipping!")
 
@@ -131,35 +154,51 @@ class SimDES:
             self.name = name
             self.type = type
             self.level = level
+            self.searchtime = 20 + random.normal(0.0, 0.5)
             if self.level == 1:
-                self.speed = 20
+                self.speed = 20 + random.normal(0, 0.1)
                 self.fueltime = 10.0
                 self.skill = 0.8
             elif self.level == 2:
-                self.speed = 30
+                self.speed = 30 + random.normal(0, 0.3)
                 self.skill = 1.0
                 self.fueltime = 12.0
             elif self.level == 3:
-                self.speed = 50
+                self.speed = 50 + random.normal(0, 1.0)
                 self.skill = 1.2
                 self.fueltime = 13.5
             else:
                 raise ValueError("UAS Level must be 1,2, or 3")
 
-        def search(self, now, distance):
-            self.mode = "searching"
-            event = Event(str(self.name + "_search"), "search", now, now + distance / self.speed)
-            return event
-        #
-        # def find(self):
-        #     # Weibull dist (https://numpy.org/doc/stable/reference/random/generated/numpy.random.weibull.html)
-        #
+    def schedule_search(self, now, distance, uas):
+        uas.mode = "searching"
+        event = SimDES.Event(str(uas.name + "_search"), "search", now + distance / uas.speed + uas.searchtime)
+        return event
+
+    def schedule_rescue(self, now, distance, uas):
+        # Weibull dist (https://numpy.org/doc/stable/reference/random/generated/numpy.random.weibull.html)
+        r = random.uniform(0,1)
+        found = False
+        if r > 0.5:
+            uas.mode = "returning"
+            event = SimDES.Event(str(uas.name + "_rescued"), "rescued", now + distance / uas.speed)
+            found = True
+        else:
+            uas.mode = "searching"
+            event = SimDES.Event(str(uas.name + "_search"), "search", now + uas.searchtime)
+
+        return event
+
+    def schedule_complete(self, now, uas):
+        uas.mode = "refueling"
+        event = SimDES.Event(str(uas.name + "_refuel"), "refuel", now + 10) # random refuel time
+        return event
 
     class Structure:
 
         def __init__(self, size, location):
             self.size = size
-            self.location = location
+            self.distance = location - 0
             self.health = 100
             self.secured = False
 
