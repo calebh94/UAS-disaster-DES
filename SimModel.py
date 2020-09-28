@@ -2,6 +2,8 @@
 import numpy.random as random
 
 
+#TODO: sort buildings, reduce building health for failure, ensure that correct building and uas IDs are being used in events
+
 class SimDES:
     def __init__(self, num_uas, num_buildings, level, maxtime):
         self.num_uas = num_uas
@@ -37,13 +39,22 @@ class SimDES:
             print("Simulation time: {} min".format(self.clock))
             events = []
             # Managing events from entity queues:
+            if len(self.building_arr) == 0 and len(self.jobs_arr) == 0:
+                break
             for struct in self.building_arr:
-                for uas in self.uas_arr:
+                if len(self.uas_arr) > 0:
+                    uas = self.uas_arr.pop()
                     newevent = self.schedule_search(self.clock, struct.distance, uas)
                     self.building_arr.remove(struct)
-                    self.uas_arr.remove(uas)
+                    # self.uas_arr.remove(uas)
                     self.jobs_arr.append([uas, struct])
                     events.append(newevent)
+                # for uas in self.uas_arr:
+                #     newevent = self.schedule_search(self.clock, struct.distance, uas)
+                #     self.building_arr.remove(struct)
+                #     self.uas_arr.remove(uas)
+                #     self.jobs_arr.append([uas, struct])
+                #     events.append(newevent)
 
             self.schedule_event(events)
             self.advance_time()
@@ -51,6 +62,7 @@ class SimDES:
         print("Successful Rescues: {}".format(self.successes))
         print("Required search jobs {}".format(self.searches))
         print("Total structures for mission {}".format(self.num_buildings))
+        print("Total time for mission {}".format(self.clock))
 
     def advance_time(self):
         # check FEL for next event (if more than 15 min then jump 15 and check conditions)
@@ -210,7 +222,7 @@ class SimDES:
 
 
 if __name__ == "__main__":
-    s = SimDES(2, 3, 1, 100)
+    s = SimDES(5, 20, 1, 500)
     s.run()
 
 
